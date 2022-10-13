@@ -1,1 +1,2 @@
 ./configure --prefix=/Users/a/program/ffmpeg334 --disable-yasm --enable-shared
+./configure --prefix=/home/a/program/ffmpeg334 --disable-yasm --enable-shared

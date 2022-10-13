@@ -70,11 +70,93 @@ extern const URLProtocol ff_librtmpt_protocol;
 extern const URLProtocol ff_librtmpte_protocol;
 extern const URLProtocol ff_libssh_protocol;
 extern const URLProtocol ff_libsmbclient_protocol;
+extern const URLProtocol ff_fd_protocol;
+
+
+#include "libavutil/opt.h"
+#include "unistd.h"
+
+static const AVOption fd_options[] = {
+        {NULL}
+};
+
+static const AVClass fd_class = {
+        .class_name = "fd",
+        .item_name  = av_default_item_name,
+        .option     = fd_options,
+        .version    = LIBAVUTIL_VERSION_INT,
+};
+
+typedef struct FDContext {
+    const AVClass *class;
+    int fd;
+    int trunc;
+    int blocksize;
+    int follow;
+} FDContext;
+
+static int fd_open(URLContext *h, const char *url, int flags) {
+    printf("-------------------fd_open: %s\n",url);
+    FDContext *c = h->priv_data;
+
+    //
+    av_strstart(url, "fd://", &url);
+
+    char *final;
+    int fd = strtol(url, &final, 10);
+    printf("-------------------fd_open: %d\n",fd);
+
+    if ((url == final) || *final) {/* No digits found, or something like 10ab */
+        if (flags & AVIO_FLAG_WRITE) {
+            fd = 1;
+        } else {
+            fd = 0;
+        }
+    }
+
+    c->fd = fd;
+    h->is_streamed = 1;
+    return 0;
+}
+
+static int fd_read(URLContext *h, unsigned char *buf, int size) {
+    FDContext *c = h->priv_data;
+    int ret = read(c->fd, buf, size);
+    return ret < 0 ? AVERROR(errno) : ret;
+}
+
+static int fd_write(URLContext *h, const unsigned char *buf, int size) {
+    FDContext *c = h->priv_data;
+    int ret = write(c->fd, buf, size);
+    return ret < 0 ? AVERROR(errno) : ret;
+}
+
+static int fd_close(URLContext *h) {
+    FDContext *c = h->priv_data;
+    return close(c->fd);
+}
+
+static int fd_get_file_handle(URLContext *h) {
+    FDContext *c = h->priv_data;
+    return c->fd;
+}
+
+
+const URLProtocol ff_fd_protocol = {
+        .name                = "fd",
+        .url_open            = fd_open,
+        .url_read            = fd_read,
+        .url_write           = fd_write,
+        .url_close           = fd_close,
+        .url_get_file_handle = fd_get_file_handle,
+        .priv_data_size      = sizeof(FDContext),
+        .priv_data_class     = &fd_class,
+        .flags               = URL_PROTOCOL_FLAG_NETWORK,
+};
 
 #include "libavformat/protocol_list.c"
 
-const AVClass *ff_urlcontext_child_class_next(const AVClass *prev)
-{
+const AVClass *ff_urlcontext_child_class_next(const AVClass *prev) {
     int i;
 
     /* find the protocol that corresponds to prev */
@@ -93,8 +175,7 @@ const AVClass *ff_urlcontext_child_class_next(const AVClass *prev)
 }
 
 
-const char *avio_enum_protocols(void **opaque, int output)
-{
+const char *avio_enum_protocols(void **opaque, int output) {
     const URLProtocol **p = *opaque;
 
     p = p ? p + 1 : url_protocols;
@@ -109,8 +190,7 @@ const char *avio_enum_protocols(void **opaque, int output)
 }
 
 const URLProtocol **ffurl_get_protocols(const char *whitelist,
-                                        const char *blacklist)
-{
+                                        const char *blacklist) {
     const URLProtocol **ret;
     int i, ret_idx = 0;
 
